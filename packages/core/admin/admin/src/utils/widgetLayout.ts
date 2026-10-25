@@ -315,7 +315,7 @@ export const filterWidgetsByHomepageLayout = (
 const getWidgetPriorities = (homepageLayout: Homepage.Layout): Map<string, number> => {
   const { widgets } = homepageLayout;
 
-  return new Map(widgets.map((widget, index) => [widget.uid, widgets.length - index]));
+  return new Map(widgets.map((widget, index) => [widget.uid, index]));
 };
 
 export const sortWidgetsByHomepageLayout = (
