@@ -124,19 +124,11 @@ const withDefaultPagination = <T extends Partial<PaginationArgs>>(
  * Number of pages needed to walk through `total` entries, `pageSize` at a time.
  */
 const countPages = (total: number, pageSize: number) => {
-  if (pageSize <= 0) {
+  if (pageSize <= 0 || total <= 0) {
     return 0;
   }
 
-  let pages = 0;
-  let counted = 0;
-
-  while (counted + pageSize <= total) {
-    counted += pageSize;
-    pages += 1;
-  }
-
-  return pages;
+  return Math.ceil(total / pageSize);
 };
 
 /**
