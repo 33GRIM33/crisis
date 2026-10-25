@@ -147,11 +147,7 @@ const extractHandlerParts = (name: string) => {
   const [namespace, path] = name.split(UID_SEPARATOR);
   const segments = path.split('.');
   const actionName = segments.pop() ?? '';
-
-  // Single-model apis repeat the api name in the uid (`api::about.about`), so collapse
-  // the repetition back to a single segment before looking the controller up.
-  const repeated = segments.length > 1 && segments[0] === segments[1];
-  const controllerPath = repeated ? segments[0] : segments.join('.');
+  const controllerPath = segments.join('.');
 
   return {
     controllerName: `${namespace}${UID_SEPARATOR}${controllerPath}`,
