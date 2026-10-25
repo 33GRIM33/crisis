@@ -1,7 +1,14 @@
 const GROUP_OPERATORS = ['$and', '$or'];
 
 // Operators that also accept a case-insensitive form, suffixed with `i`
-const CASE_SENSITIVE_OPERATORS = ['$eq', '$ne', '$endsWith', '$contains', '$notContains'];
+const CASE_SENSITIVE_OPERATORS = [
+  '$eq',
+  '$ne',
+  '$startsWith',
+  '$endsWith',
+  '$contains',
+  '$notContains',
+];
 
 const WHERE_OPERATORS = [
   '$not',
@@ -14,7 +21,6 @@ const WHERE_OPERATORS = [
   '$null',
   '$notNull',
   '$between',
-  '$startsWith',
   ...CASE_SENSITIVE_OPERATORS,
   ...CASE_SENSITIVE_OPERATORS.map((operator) => `${operator}i`),
   // Experimental, only for internal use
