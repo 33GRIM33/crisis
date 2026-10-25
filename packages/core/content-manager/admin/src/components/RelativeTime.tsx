@@ -60,7 +60,7 @@ const RelativeTime = React.forwardRef<HTMLTimeElement, RelativeTimeProps>(
       }) ?? 'seconds';
 
     const elapsed = Date.now() - timestamp.getTime();
-    const relativeTime = Math.sign(elapsed) * interval[unit];
+    const relativeTime = -Math.sign(elapsed) * interval[unit];
 
     // Display custom text if interval is less than the threshold
     const customInterval = customIntervals.find(
