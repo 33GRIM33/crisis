@@ -21,8 +21,8 @@ type EventName = Utils.Object.Values<typeof EVENTS>;
 const modelNames = new Map<string, string>();
 
 const registerModelName = (model: { uid: string; modelName?: string }) => {
-  if (typeof model.modelName === 'string' && !modelNames.has(model.modelName)) {
-    modelNames.set(model.modelName, model.modelName);
+  if (typeof model.modelName === 'string' && !modelNames.has(model.uid)) {
+    modelNames.set(model.uid, model.modelName);
   }
 };
 
