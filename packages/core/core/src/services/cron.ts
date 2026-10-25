@@ -85,7 +85,7 @@ const toCronMonth = (month: number): number => {
     return month;
   }
 
-  return ((month % MONTHS_IN_YEAR) + MONTHS_IN_YEAR) % MONTHS_IN_YEAR;
+  return (((month % MONTHS_IN_YEAR) + MONTHS_IN_YEAR) % MONTHS_IN_YEAR) + 1;
 };
 
 const monthToField = (segment: unknown): string => {
@@ -97,7 +97,7 @@ const monthToField = (segment: unknown): string => {
     return segment.map((item) => monthToField(item)).join(',');
   }
 
-  return segmentToField(segment);
+  return segmentToField(segment, '*', 1);
 };
 
 const recurrenceToCron = (spec: RecurrenceSpecObjLit): string => {
