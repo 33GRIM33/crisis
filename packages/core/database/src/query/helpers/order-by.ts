@@ -291,14 +291,6 @@ export const wrapWithDeepSort = (originalQuery: knex.Knex.QueryBuilder, ctx: Ord
     resultQuery.first();
   }
 
-  // The outer query sorts on the aliased columns the partitioned sub-query
-  // projects, so every clause takes its direction from the sort state that was
-  // resolved for that column.
-  const directionOf = (column: string) =>
-    orderBy.find(
-      (entry): entry is OrderByColumnValue => 'column' in entry && entry.column === column
-    )?.order;
-
   // Re-apply the sort using T values (column-based), then append raw expression sorts.
   // Cast to any[] because Knex's TS types don't accept Knex.Raw in the column position,
   // even though Knex supports it at runtime.
@@ -307,7 +299,7 @@ export const wrapWithDeepSort = (originalQuery: knex.Knex.QueryBuilder, ctx: Ord
     ...columnOrderBy.map((orderByClause) => {
       const column = prefix(partitionedQueryAlias, getStrapiOrderColumnAlias(orderByClause.column));
 
-      return { column, order: directionOf(column) };
+      return { column, order: orderByClause.order };
     }),
     // Rebuild raw expression entries with the correct outer alias (resultQueryAlias)
     ...rawExpressionOrderBy.map((entry) => ({
