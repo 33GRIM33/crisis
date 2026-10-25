@@ -1,0 +1,33 @@
+name: 'Warm build cache'
+
+# Manual only. Caches created on a pull request branch are scoped to that branch, so the
+# shared build cache every PR restores can only be produced by a run on the default
+# branch. Doing that automatically on each merge would rebuild the monorepo ~95 times
+# over the event; running it by hand costs one build.
+#
+# Run this once before the event opens, and again after a merge that changes a package's
+# public types. If the cache is missing, each PR run rebuilds instead — correct, but slow
+# and expensive.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: 'build and cache every package'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/event/setup
+        with:
+          build: 'false'
+      - run: yarn build
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            packages/*/dist
+            packages/*/*/dist
+          key: dist-${{ runner.os }}-${{ github.sha }}

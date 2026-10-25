@@ -1,0 +1,53 @@
+name: 'Event setup'
+description: 'Node, cached node_modules, yarn install and cached package builds'
+
+inputs:
+  build:
+    description: 'Build every package if no build cache was restored'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Restore node_modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          packages/*/node_modules
+          packages/*/*/node_modules
+          examples/*/node_modules
+          .github/actions/*/node_modules
+          scripts/*/node_modules
+          .yarn/install-state.gz
+        key: nm-${{ runner.os }}-node22-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+
+    - name: Install
+      shell: bash
+      run: yarn install --immutable
+      env:
+        HUSKY: '0'
+
+    # Built packages are needed by typecheck and tests (packages import each other's dist).
+    # They are produced by the warm-cache job on every push to main and restored here, so
+    # a PR never pays for a full monorepo build.
+    - name: Restore package builds
+      id: dist
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          packages/*/dist
+          packages/*/*/dist
+        key: dist-${{ runner.os }}-${{ github.event.pull_request.base.sha || github.sha }}
+        restore-keys: |
+          dist-${{ runner.os }}-
+
+    - name: Build packages (no build cache yet)
+      if: inputs.build == 'true' && steps.dist.outputs.cache-matched-key == ''
+      shell: bash
+      run: yarn build

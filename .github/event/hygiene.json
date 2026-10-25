@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "import",
+    "react",
+    "promise",
+    "oxc"
+  ],
+  "rules": {
+    "no-unused-vars": "error",
+    "typescript/no-unused-vars": "error",
+    "no-duplicate-imports": "error",
+    "import/no-self-import": "error",
+    "import/no-cycle": "error",
+    "promise/no-return-wrap": "error",
+    "promise/param-names": "error",
+    "no-async-promise-executor": "error",
+    "react/exhaustive-deps": "error",
+    "react/rules-of-hooks": "error",
+    "react/no-direct-mutation-state": "error"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/*.d.ts"
+  ]
+}

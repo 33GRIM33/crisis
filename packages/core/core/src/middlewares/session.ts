@@ -1,0 +1,32 @@
+import { isEmpty } from 'lodash';
+import { type SessionOptions, createSession } from 'koa-session';
+import type { Core } from '@strapi/types';
+
+const defaultConfig = {
+  key: 'koa.sess',
+  maxAge: 86400000,
+  autoCommit: true,
+  overwrite: true,
+  httpOnly: true,
+  signed: true,
+  rolling: false,
+  renew: false,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: undefined,
+};
+
+export const session: Core.MiddlewareFactory<Partial<SessionOptions>> = (
+  userConfig,
+  { strapi }
+) => {
+  const { keys } = strapi.server.app;
+  if (!Array.isArray(keys) || keys.length === 0 || keys.some((key) => isEmpty(key))) {
+    throw new Error(
+      `App keys are required. Please set app.keys in config/server.js (ex: keys: ['myKeyA', 'myKeyB'])`
+    );
+  }
+
+  const config: Partial<SessionOptions> = { ...defaultConfig, ...userConfig };
+
+  strapi.server.use(createSession(config, strapi.server.app));
+};

@@ -1,0 +1,77 @@
+import type { Core } from '@strapi/types';
+import { defaultTo, map, size, mean, max, sum } from 'lodash';
+import { add } from 'date-fns';
+import { getService } from '../../utils';
+import type workflowMetrics from './index';
+import type { WeeklyMetrics } from './index';
+
+const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+const getWeeklyCronScheduleAt = (date: Date) =>
+  `${date.getSeconds()} ${date.getMinutes()} ${date.getHours()} * * ${date.getDay()}`;
+
+export default ({ strapi }: { strapi: Core.Strapi }) => {
+  const metrics = getService('workflow-metrics', { strapi }) as typeof workflowMetrics;
+  const workflowsService = getService('workflows', { strapi });
+
+  const getMetricsStoreValue = async () => {
+    const value = await strapi.store.get({ type: 'plugin', name: 'ee', key: 'metrics' });
+    return defaultTo(value, {});
+  };
+
+  const setMetricsStoreValue = (value: unknown) =>
+    strapi.store.set({ type: 'plugin', name: 'ee', key: 'metrics', value });
+
+  return {
+    async computeMetrics(): Promise<WeeklyMetrics> {
+      // There will never be more than 200 workflow, so we can safely fetch them all
+      const workflows = await workflowsService.find({ populate: 'stages' });
+
+      const stagesCount = map(workflows, (workflow) => size(workflow.stages));
+
+      const contentTypesCount = map(workflows, (workflow) => size(workflow.contentTypes));
+
+      return {
+        numberOfActiveWorkflows: size(workflows),
+        avgStagesCount: mean(stagesCount),
+        maxStagesCount: max(stagesCount),
+        activatedContentTypes: sum(contentTypesCount),
+      };
+    },
+
+    async sendMetrics() {
+      const computedMetrics = await this.computeMetrics();
+      await metrics.sendDidSendReviewWorkflowPropertiesOnceAWeek(computedMetrics);
+
+      const metricsInfoStored = await getMetricsStoreValue();
+      // @ts-expect-error metricsInfoStored can use spread
+      await setMetricsStoreValue({ ...metricsInfoStored, lastWeeklyUpdate: new Date().getTime() });
+    },
+
+    async ensureWeeklyStoredCronSchedule() {
+      const metricsInfoStored: any = await getMetricsStoreValue();
+      const { weeklySchedule: currentSchedule, lastWeeklyUpdate } = metricsInfoStored;
+
+      const now = new Date();
+      let weeklySchedule = currentSchedule;
+
+      if (!currentSchedule || !lastWeeklyUpdate || lastWeeklyUpdate + ONE_WEEK < now.getTime()) {
+        weeklySchedule = getWeeklyCronScheduleAt(add(now, { seconds: 15 }));
+        await setMetricsStoreValue({ ...metricsInfoStored, weeklySchedule });
+      }
+
+      return weeklySchedule;
+    },
+
+    async registerCron() {
+      const weeklySchedule = await this.ensureWeeklyStoredCronSchedule();
+
+      strapi.cron.add({
+        reviewWorkflowsWeekly: {
+          task: this.sendMetrics.bind(this),
+          options: weeklySchedule,
+        },
+      });
+    },
+  };
+};

@@ -1,0 +1,91 @@
+import type { UID, Utils, Modules, Core } from '@strapi/types';
+import { sanitize } from '@strapi/utils';
+
+import { getDeepPopulate } from './utils/populate';
+
+const EVENTS = {
+  ENTRY_CREATE: 'entry.create',
+  ENTRY_UPDATE: 'entry.update',
+  ENTRY_DELETE: 'entry.delete',
+  ENTRY_PUBLISH: 'entry.publish',
+  ENTRY_UNPUBLISH: 'entry.unpublish',
+  ENTRY_DRAFT_DISCARD: 'entry.draft-discard',
+};
+
+type EventName = Utils.Object.Values<typeof EVENTS>;
+
+/**
+ * Model names used in event payloads. Schemas are rebuilt on every reload, so they are
+ * resolved once per content type instead of being read from the schema on every event.
+ */
+const modelNames = new Map<string, string>();
+
+const registerModelName = (model: { uid: string; modelName?: string }) => {
+  if (typeof model.modelName === 'string' && !modelNames.has(model.modelName)) {
+    modelNames.set(model.modelName, model.modelName);
+  }
+};
+
+const getModelName = (uid: string) => modelNames.get(uid) ?? uid;
+
+/**
+ * Manager to trigger entry related events
+ *
+ * It will populate the entry if it is not a delete event.
+ * So the event payload will contain the full entry.
+ */
+const createEventManager = (strapi: Core.Strapi, uid: UID.Schema) => {
+  const model = strapi.getModel(uid);
+
+  registerModelName(model);
+
+  const populate = getDeepPopulate(uid, {});
+
+  const emitEvent = async (eventName: EventName, entry: Modules.Documents.AnyDocument) => {
+    // Reading the entry again with a deep populate is the expensive part of an event: skip it,
+    // along with the sanitization, when nothing would receive the event.
+    if (!strapi.eventHub.hasListeners(eventName)) {
+      return;
+    }
+
+    // There is no need to populate the entry if it has been deleted
+    let populatedEntry = entry;
+    if (![EVENTS.ENTRY_DELETE, EVENTS.ENTRY_UNPUBLISH].includes(eventName)) {
+      populatedEntry = await strapi.db.query(uid).findOne({ where: { id: entry.id }, populate });
+    }
+
+    const sanitizedEntry = await sanitize.sanitizers.defaultSanitizeOutput(
+      {
+        schema: model,
+        getModel: (uid) => strapi.getModel(uid as UID.Schema),
+      },
+      populatedEntry
+    );
+
+    await strapi.eventHub.emit(eventName, {
+      model: getModelName(model.uid),
+      uid: model.uid,
+      entry: sanitizedEntry,
+    });
+  };
+
+  return {
+    /**
+     * strapi.db.query might reuse the transaction used in the doc service request,
+     * so this is executed after that transaction is committed.
+     */
+    emitEvent(eventName: EventName, entry: Modules.Documents.AnyDocument) {
+      strapi.db.transaction(({ onCommit }) => {
+        // The transaction runner discards the callback result, so a failure here
+        // (e.g. the re-read of the entry) would be an unhandled rejection.
+        onCommit(() =>
+          emitEvent(eventName, entry).catch((error) => {
+            strapi.log.error(`Could not emit ${eventName} for ${uid}: ${error?.message ?? error}`);
+          })
+        );
+      });
+    },
+  };
+};
+
+export { createEventManager };

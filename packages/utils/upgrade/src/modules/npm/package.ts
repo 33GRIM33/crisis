@@ -1,0 +1,174 @@
+import assert from 'node:assert';
+import semver from 'semver';
+import execa from 'execa';
+import { packageManager } from '@strapi/utils';
+
+// Import undici's dispatchers from their own files: loading undici's main entry replaces the
+// dispatcher of Node's built-in fetch (https://github.com/nodejs/undici/issues/5500)
+/* eslint-disable import/extensions -- required by the ESM build: undici has no exports map */
+import ProxyAgent from 'undici/lib/dispatcher/proxy-agent.js';
+import Dispatcher1Wrapper from 'undici/lib/dispatcher/dispatcher1-wrapper.js';
+import Dispatcher from 'undici/lib/dispatcher/dispatcher.js';
+import connect from 'undici/lib/api/api-connect.js';
+/* eslint-enable import/extensions */
+import * as constants from './constants';
+import { isLiteralSemVer } from '../version';
+
+import type { Package as PackageInterface, NPMPackage, NPMPackageVersion } from './types';
+import type { Version } from '../version';
+import { Logger } from '../logger';
+
+// undici's main entry adds connect() to every dispatcher. ProxyAgent needs it to open the CONNECT
+// tunnel used for https targets such as the npm registry, so add it here since the entry is skipped.
+Dispatcher.prototype.connect ??= connect;
+
+const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+// Wrapped so Node's built-in fetch (bundling its own undici) can use an undici 8 dispatcher
+const agent = proxyUrl ? new Dispatcher1Wrapper(new ProxyAgent(proxyUrl)) : undefined;
+
+export class Package implements PackageInterface {
+  name: string;
+
+  cwd: string;
+
+  private logger: Logger;
+
+  private npmPackage: NPMPackage | null;
+
+  constructor(name: string, cwd: string, logger: Logger) {
+    this.name = name;
+    this.cwd = cwd;
+    this.logger = logger;
+    this.npmPackage = null;
+  }
+
+  get isLoaded() {
+    return this.npmPackage !== null;
+  }
+
+  private assertPackageIsLoaded(_npmPackage: NPMPackage | null): asserts _npmPackage is NPMPackage {
+    assert(this.isLoaded, 'The package is not loaded yet');
+  }
+
+  getVersionsDict() {
+    this.assertPackageIsLoaded(this.npmPackage);
+
+    return this.npmPackage.versions;
+  }
+
+  getVersionsAsList() {
+    this.assertPackageIsLoaded(this.npmPackage);
+
+    return Object.values(this.npmPackage.versions);
+  }
+
+  findVersionsInRange(range: Version.Range) {
+    const versions = this.getVersionsAsList();
+
+    return (
+      versions
+        // Only select versions matching the upgrade range
+        .filter((v) => range.test(v.version))
+        // Only select supported version format (x.x.x)
+        .filter((v) => isLiteralSemVer(v.version))
+        // Sort in ascending order
+        .sort((v1, v2) => semver.compare(v1.version, v2.version))
+    );
+  }
+
+  private async getYarnMajorVersion(): Promise<number> {
+    try {
+      const { stdout } = await execa('yarn', ['--version'], { timeout: 5_000 });
+      const version = stdout.trim();
+      return parseInt(version.split('.')[0], 10);
+    } catch {
+      // Default to Yarn Berry (v2+) if version check fails
+      return 2;
+    }
+  }
+
+  private normalizeRegistryOutput(stdout: string): string | undefined {
+    const registry = stdout.trim();
+
+    // Yarn Classic (v1) may return literal "undefined" for unset config values
+    if (!registry || registry === 'undefined') {
+      return undefined;
+    }
+
+    return registry;
+  }
+
+  private async getRegistryFromPackageManager(): Promise<string | undefined> {
+    try {
+      const packageManagerName = await packageManager.getPreferred(this.cwd);
+      if (!packageManagerName) return undefined;
+
+      let command: readonly string[];
+
+      if (packageManagerName === 'yarn') {
+        const yarnMajorVersion = await this.getYarnMajorVersion();
+        // Yarn Classic (v1) uses 'registry', Yarn Berry (v2+) uses 'npmRegistryServer'
+        command =
+          yarnMajorVersion >= 2
+            ? ['config', 'get', 'npmRegistryServer']
+            : ['config', 'get', 'registry'];
+      } else if (packageManagerName === 'npm' || packageManagerName === 'pnpm') {
+        command = ['config', 'get', 'registry'];
+      } else {
+        this.logger.warn(`Unsupported package manager: ${packageManagerName}`);
+        return undefined;
+      }
+
+      const { stdout } = await execa(packageManagerName, [...command], { timeout: 10_000 });
+      return this.normalizeRegistryOutput(stdout);
+    } catch {
+      this.logger.warn('Failed to determine registry URL from package manager');
+      return undefined;
+    }
+  }
+
+  private async determineRegistryUrl(): Promise<string> {
+    if (process.env.NPM_REGISTRY_URL) {
+      this.logger.debug(`Using NPM_REGISTRY_URL: ${process.env.NPM_REGISTRY_URL}`);
+      return process.env.NPM_REGISTRY_URL.replace(/\/$/, '');
+    }
+
+    const packageManagerRegistry = await this.getRegistryFromPackageManager();
+    if (packageManagerRegistry) {
+      this.logger.debug(`Using package manager registry: ${packageManagerRegistry}`);
+      return packageManagerRegistry.replace(/\/$/, '');
+    }
+
+    this.logger.debug(`Using default registry: ${constants.NPM_REGISTRY_URL}`);
+    return constants.NPM_REGISTRY_URL.replace(/\/$/, '');
+  }
+
+  findVersion(version: Version.SemVer): NPMPackageVersion | undefined {
+    const versions = this.getVersionsAsList();
+
+    return versions.find((npmVersion) => semver.eq(npmVersion.version, version));
+  }
+
+  async refresh() {
+    const packageURL = `${await this.determineRegistryUrl()}/${this.name}`;
+
+    const response = await fetch(packageURL, {
+      // The global RequestInit types its dispatcher with Node's bundled undici types
+      dispatcher: agent as unknown as RequestInit['dispatcher'],
+    });
+
+    // TODO: Use a validation library to make sure the response structure is correct
+    assert(response.ok, `Request failed for ${packageURL}`);
+
+    this.npmPackage = (await response.json()) as NPMPackage;
+
+    return this;
+  }
+
+  versionExists(version: Version.SemVer) {
+    return this.findVersion(version) !== undefined;
+  }
+}
+
+export const npmPackageFactory = (name: string, cwd: string, logger: Logger) =>
+  new Package(name, cwd, logger);

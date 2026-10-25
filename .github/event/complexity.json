@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "rules": {
+    "complexity": ["error", { "max": 12 }],
+    "max-depth": ["error", { "max": 4 }],
+    "max-params": ["error", { "max": 5 }],
+    "max-nested-callbacks": ["error", { "max": 4 }],
+    "max-lines-per-function": ["error", { "max": 120 }],
+    "no-nested-ternary": "error",
+    "unicorn/no-lonely-if": "error"
+  },
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "**/*.d.ts"]
+}

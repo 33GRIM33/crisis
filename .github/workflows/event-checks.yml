@@ -1,0 +1,69 @@
+name: 'Event checks'
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # A new push cancels the previous run instead of queueing behind it. With many people
+  # pushing repeatedly this is the single biggest saving: superseded runs stop early
+  # instead of spending minutes nobody reads.
+  group: event-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Lets the single job publish one check run per gate. Separate jobs would show the
+  # same rows and bill a checkout and an install for each.
+  checks: write
+
+jobs:
+  # ONE job, deliberately.
+  #
+  # Actions bills per job-minute, so N parallel jobs cost N checkouts and N installs for
+  # the same answers. This event runs on the free tier (2,000 minutes a month) with a few
+  # hundred pull requests expected, which leaves a budget of roughly two minutes a run.
+  #
+  # Only gates that cannot be replaced by a local check live here. The expensive half of
+  # the suite — full builds, whole-package and dependent-package test suites, booting the
+  # app — is run by the organiser against the PR branch, which costs nothing.
+  checks:
+    name: 'event checks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: ./.github/event/setup
+      - name: 'run every gate'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The PR head, not the merge commit, so the checks attach to the submission.
+          CHECK_SHA: ${{ github.event.pull_request.head.sha }}
+        # HEAD^1 is main on a merge commit, so HEAD^1..HEAD is exactly the submission.
+        run: node .github/event/check.mjs --ci-only --base HEAD^1 --head HEAD
+
+  # Never runs automatically. Triggered from the Actions tab only if a submission needs
+  # proving on a clean machine rather than locally.
+  deep-verify:
+    name: 'deep verify (manual)'
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ARGS: '--base origin/main --head HEAD'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/event/setup
+      - name: 'build'
+        run: node .github/event/check.mjs --gate build $ARGS
+      - name: 'test-package'
+        run: node .github/event/check.mjs --gate test-package $ARGS
+      - name: 'test-dependents'
+        run: node .github/event/check.mjs --gate test-dependents $ARGS
+      - name: 'smoke-boot'
+        run: node .github/event/check.mjs --gate smoke-boot $ARGS
