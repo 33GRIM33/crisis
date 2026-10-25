@@ -1,7 +1,7 @@
 /**
  * Publication statuses the content API serves by default.
  */
-const DEFAULT_STATUSES = ['published'];
+const DEFAULT_STATUSES = ['published', 'draft'];
 
 export abstract class CoreService {
   getFetchParams(params = {}): any {
