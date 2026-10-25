@@ -185,6 +185,21 @@ describe('WebhookRunner', () => {
       expect(getRequests().map(([, payload]) => payload.uid)).toEqual([PAGE_UID]);
     });
 
+    test('Stops sending the events that were unticked when the webhook is updated', async () => {
+      const { runner, emit, getRequests } = setup();
+      const webhook = createWebhook({ events: ['entry.create', 'entry.update'] });
+      runner.add(webhook);
+
+      runner.update({ ...webhook, events: ['entry.create'], url: 'https://example.com/new' });
+
+      await emit('entry.update', entryEvent(ARTICLE_UID));
+      await emit('entry.create', entryEvent(ARTICLE_UID));
+
+      expect(getRequests()).toEqual([
+        ['https://example.com/new', expect.objectContaining({ event: 'entry.create' })],
+      ]);
+    });
+
     test('Stops listening to the events of a removed webhook', async () => {
       const { runner, emit, getRequests } = setup();
       const webhook = createWebhook({
