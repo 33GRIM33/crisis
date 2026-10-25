@@ -68,4 +68,40 @@ describe('document-manager', () => {
       expect(findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('findPage', () => {
+    it('passes filters and _q to count so total count reflects active filters and search', async () => {
+      const count = jest.fn().mockResolvedValue(1);
+      findMany.mockResolvedValue([{ documentId: 'doc-1' }]);
+      global.strapi = {
+        documents: jest.fn(() => ({
+          findMany,
+          count,
+        })),
+      } as unknown as typeof global.strapi;
+
+      const service = documentManager({ strapi: global.strapi });
+      const result = await service.findPage(
+        {
+          filters: { name: { $eq: 'Unique Pizza' } },
+          _q: 'Pizza',
+          locale: 'en',
+          status: 'draft',
+          page: 1,
+          pageSize: 10,
+        },
+        RELATION_LAB_UID
+      );
+
+      expect(count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: { name: { $eq: 'Unique Pizza' } },
+          _q: 'Pizza',
+          locale: 'en',
+          status: 'draft',
+        })
+      );
+      expect(result.pagination.total).toBe(1);
+    });
+  });
 });
