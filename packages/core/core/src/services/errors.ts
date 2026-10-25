@@ -11,6 +11,10 @@ const mapErrorsAndStatus = [
     status: 403,
   },
   {
+    classError: errors.PolicyError,
+    status: 403,
+  },
+  {
     classError: errors.NotFoundError,
     status: 404,
   },
