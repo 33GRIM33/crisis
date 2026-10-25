@@ -38,7 +38,7 @@ const createOrUpdateDocument = async (ctx: any, opts?: OptionsWithPopulate) => {
   const documentManager = getService('document-manager');
   const permissionChecker = getService('permission-checker').create({ userAbility, model });
 
-  if (permissionChecker.cannot.create()) {
+  if (permissionChecker.cannot.create() && permissionChecker.cannot.update()) {
     throw new errors.ForbiddenError();
   }
 
